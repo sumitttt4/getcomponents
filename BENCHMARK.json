@@ -1,0 +1,41 @@
+{
+  "runAt": "2026-10-15T05:08:37.015Z",
+  "results": [
+    {
+      "category": "Utility-CSS marketing page",
+      "url": "https://tailwindcss.com/",
+      "status": "failed",
+      "error": "page.goto: net::ERR_BLOCKED_BY_CLIENT at https://tailwindcss.com/\nCall log:\n\u001b[2m  - navigating to \"https://tailwindcss.com/\", waiting until \"domcontentloaded\"\u001b[22m\n",
+      "componentsMissed": "Unknown — source could not be inspected.",
+      "duplicates": "Not measured",
+      "wrongBoundaries": "Not measured",
+      "variantCoverage": "Not measured",
+      "visualDiff": null,
+      "standaloneCompileFailures": null
+    },
+    {
+      "category": "CSS-in-JS dashboard",
+      "url": "https://mui.com/material-ui/getting-started/templates/dashboard/",
+      "status": "failed",
+      "error": "page.goto: net::ERR_BLOCKED_BY_CLIENT at https://mui.com/material-ui/getting-started/templates/dashboard/\nCall log:\n\u001b[2m  - navigating to \"https://mui.com/material-ui/getting-started/templates/dashboard/\", waiting until \"domcontentloaded\"\u001b[22m\n",
+      "componentsMissed": "Unknown — source could not be inspected.",
+      "duplicates": "Not measured",
+      "wrongBoundaries": "Not measured",
+      "variantCoverage": "Not measured",
+      "visualDiff": null,
+      "standaloneCompileFailures": null
+    },
+    {
+      "category": "Design-system docs",
+      "url": "https://kumo-ui.com/components/button/",
+      "status": "failed",
+      "error": "page.goto: net::ERR_BLOCKED_BY_CLIENT at https://kumo-ui.com/components/button/\nCall log:\n\u001b[2m  - navigating to \"https://kumo-ui.com/components/button/\", waiting until \"domcontentloaded\"\u001b[22m\n",
+      "componentsMissed": "Unknown — source could not be inspected.",
+      "duplicates": "Not measured",
+      "wrongBoundaries": "Not measured",
+      "variantCoverage": "Not measured",
+      "visualDiff": null,
+      "standaloneCompileFailures": null
+    }
+  ]
+}
