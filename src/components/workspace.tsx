@@ -7,15 +7,15 @@ import { useTheme } from 'next-themes';
 import { Button } from '@cloudflare/kumo/components/button';
 import { Input } from '@cloudflare/kumo/components/input';
 import { Dialog } from '@cloudflare/kumo/components/dialog';
-import { ArrowUpRight, ArrowRight, ArrowLeft, Sun, Moon, Globe, SquaresFour, Cursor, Textbox, CreditCard, Compass, Tag, Code, Copy, Check, DownloadSimple, X, MagnifyingGlass, Monitor, DeviceMobile, Info, CircleNotch, WarningCircle, BracketsCurly, Stack, Scan, Fingerprint, CaretRight } from '@phosphor-icons/react';
+import { ArrowUpRight, ArrowRight, ArrowLeft, Sun, Moon, Globe, SquaresFour, Cursor, Textbox, Rectangle, Browser, Tag, Code, Copy, Check, DownloadSimple, X, MagnifyingGlass, Monitor, DeviceMobile, Info, CircleNotch, WarningCircle, BracketsCurly, Stack, Scan, Fingerprint, CaretRight } from '@phosphor-icons/react';
 import { fixtureCatalogue } from '@/fixtures/catalogue';
 import { exportHtml, exportReact, previewDocument } from '@/lib/export';
 import type { Catalogue, Category, ComponentEntry, Job, Snapshot } from '@/lib/types';
 
 const categories: { name: Category | 'All components'; icon: typeof SquaresFour }[] = [
-  { name: 'All components', icon: SquaresFour }, { name: 'Buttons', icon: Cursor }, { name: 'Inputs', icon: Textbox }, { name: 'Cards', icon: CreditCard }, { name: 'Navigation', icon: Compass }, { name: 'Badges', icon: Tag }, { name: 'Other', icon: BracketsCurly },
+  { name: 'All components', icon: SquaresFour }, { name: 'Buttons', icon: Cursor }, { name: 'Inputs', icon: Textbox }, { name: 'Cards', icon: Rectangle }, { name: 'Navigation', icon: Browser }, { name: 'Badges', icon: Tag }, { name: 'Other', icon: BracketsCurly },
 ];
-function Mark() { return <span className="brand-mark" aria-hidden="true"><i/><i/><i/><i/></span>; }
+function Mark() { return <svg className="brand-mark" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.6" stroke="currentColor" strokeWidth="1.6"/><rect x="17" y="3" width="8" height="8" rx="1.6" stroke="currentColor" strokeWidth="1.6"/><rect x="3" y="17" width="8" height="8" rx="1.6" stroke="currentColor" strokeWidth="1.6"/><rect x="17" y="17" width="8" height="8" rx="1.6" fill="currentColor"/><path d="M14 5h1m-1 18h1M5 14v1m18-1v1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>; }
 function download(name: string, content: string, type = 'text/plain') {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 500);
@@ -23,9 +23,21 @@ function download(name: string, content: string, type = 'text/plain') {
 function cleanName(name: string) { return name.toLowerCase().replace(/[^a-z0-9]+/g,'-'); }
 function Preview({ snapshot, compact = false }: { snapshot: Snapshot; compact?: boolean }) {
   const width = snapshot.width + 48;
-  return <div className={`isolated-preview ${compact ? 'compact-preview' : ''}`}>
+  const height = snapshot.height + 48;
+  const container = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const element = container.current;
+    if (!compact || !element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setScale(Math.min(1, Math.max(1,entry.contentRect.width - 24)/width, Math.max(1,entry.contentRect.height - 20)/height));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [compact, width, height]);
+  return <div ref={container} className={`isolated-preview ${compact ? 'compact-preview' : ''}`}>
     <iframe sandbox="" title="Isolated component preview" referrerPolicy="no-referrer" tabIndex={compact ? -1 : 0}
-      srcDoc={previewDocument(snapshot)} style={{ width: Math.max(1,width), height: Math.max(1,snapshot.height+48), maxWidth: compact ? undefined : '100%' }} />
+      data-preview-width={width} data-preview-height={height} srcDoc={previewDocument(snapshot)} style={{ width: Math.max(1,width), height: Math.max(1,height), transform: compact ? `scale(${scale})` : undefined }} />
   </div>;
 }
 

@@ -20,7 +20,7 @@ If Playwright cannot download Chromium in your environment, install a trusted Ch
 
 ## What works
 
-- Responsive landing page and catalogue, light/dark themes through `next-themes`, Kumo buttons/inputs/dialog, keyboard focus and reduced-motion support.
+- Responsive landing page and catalogue with self-hosted Inter, automatically fitted component previews, pure-black dark background, and light/dark themes through `next-themes`, Kumo buttons/inputs/dialog, keyboard focus and reduced-motion support.
 - Public URL submission with progress polling, cancellation, explicit failures and 24-hour catalogue retrieval by random job ID.
 - Desktop (1280 px) and mobile (390 px) rendering in fresh browser contexts.
 - Discovery from native controls, exposed roles/labels, class hints, repeated DOM structure and computed-style signatures. Groups are heuristic; style hashes do not prove a shared source component.
@@ -98,6 +98,7 @@ Access to a website is not permission to reuse its code, fonts, images or other 
 | `src/lib/extractor.ts` | Isolated browser lifecycle, grouping, state capture, screenshots and pixel comparisons |
 | `src/lib/jobs.ts` | Bounded local job lifecycle, expiry, rate limit and persistence |
 | `src/lib/export.ts`, `types.ts` | Shared snapshot format, sandboxed documents and standalone exports |
+| `public/fonts/inter-latin.woff2`, `public/fonts/OFL.txt` | Self-hosted Inter variable UI font and its OFL licence |
 | `src/fixtures/catalogue.ts` | Clearly separate hand-made sample data |
 | `tests/` | Meaningful security, renderer, state, fidelity and export regression checks |
 | `scripts/benchmark.ts`, `BENCHMARK.json` | Repeatable three-site experiment and its actual recorded failures/results |
