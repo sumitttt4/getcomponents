@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
-  serverExternalPackages: ['playwright', 'playwright-core', 'pngjs'],
+  serverExternalPackages: ['playwright-core', '@sparticuz/chromium', 'pngjs'],
+  outputFileTracingIncludes: { '/api/extract': ['./node_modules/@sparticuz/chromium/bin/**/*'] },
   poweredByHeader: false,
   async headers() { return [{ source: '/(.*)', headers: [
     { key: 'X-Content-Type-Options', value: 'nosniff' },

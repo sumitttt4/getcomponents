@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Providers } from '@/components/providers';
 import './globals.css';
+import './landing.css';
 export const metadata: Metadata = {
   title: 'Unpack — a website, in its smallest parts',
   description: 'An early experiment that turns a public website into an inspectable catalogue of its reusable UI components, visual variants and standalone code.',

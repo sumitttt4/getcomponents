@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page, type CDPSession } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page, type CDPSession } from 'playwright-core';
 import { PNG } from 'pngjs';
 import { createHash } from 'node:crypto';
 import { discoverComponents, captureComponent } from './dom';
@@ -17,6 +17,10 @@ export function pixelDifference(source: Buffer, rendered: Buffer): number | null
 }
 
 export async function launchBrowser(): Promise<Browser> {
+  if (process.env.VERCEL === '1' && !process.env.UNPACK_CHROMIUM_EXECUTABLE) {
+    const { default: serverless } = await import('@sparticuz/chromium');
+    return chromium.launch({ headless:true, args:serverless.args, executablePath:await serverless.executablePath(), chromiumSandbox:false });
+  }
   return chromium.launch({ headless: true, executablePath: process.env.UNPACK_CHROMIUM_EXECUTABLE || undefined, chromiumSandbox: process.getuid?.() !== 0,
     args: ['--disable-background-networking','--disable-component-update','--disable-extensions','--disable-sync','--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-features=WebRtcHideLocalIpsWithMdns','--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],
   });
@@ -76,6 +80,7 @@ async function measureSnapshot(context: BrowserContext, snapshot: Snapshot, sour
 }
 
 export async function extractCatalogue(input: string, progress: (stage: string, percent: number) => void = () => {}, signal?: AbortSignal): Promise<Catalogue> {
+  if(signal?.aborted) throw new Error('Extraction cancelled.');
   const started = Date.now();
   const url = parsePublicUrl(input).toString();
   progress('Opening an isolated browser', 5);
@@ -85,6 +90,7 @@ export async function extractCatalogue(input: string, progress: (stage: string, 
   signal?.addEventListener('abort', abort, { once: true });
   try {
     browser = await launchBrowser();
+    if(signal?.aborted) throw new Error('Extraction cancelled.');
     timer = setTimeout(() => { void browser?.close(); }, 90000);
     const { context, budget } = await secureContext(browser);
     const page = await context.newPage();

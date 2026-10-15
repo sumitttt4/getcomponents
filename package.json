@@ -7,19 +7,21 @@
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint .",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:public": "node --import tsx scripts/benchmark.ts",
-    "browsers": "playwright install chromium"
+    "browsers": "playwright install chromium",
+    "check:vercel": "node scripts/check-vercel.mjs"
   },
   "dependencies": {
     "@cloudflare/kumo": "2.14.0",
     "@phosphor-icons/react": "^2.1.10",
+    "@sparticuz/chromium": "^153.0.0",
     "ipaddr.js": "^2.2.0",
     "next": "16.4.1",
     "next-themes": "^0.4.6",
-    "playwright": "^1.58.2",
+    "playwright-core": "^1.64.1",
     "pngjs": "^7.0.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
@@ -32,8 +34,12 @@
     "@types/react-dom": "^19.2.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "16.4.1",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }

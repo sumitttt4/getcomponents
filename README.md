@@ -1,12 +1,12 @@
 # Unpack
 
-A public website URL → an organised catalogue of that page's reusable UI components, observed visual variants, isolated previews, and appearance code.
+Paste a public website URL and get a catalogue of its reusable UI: component types, visual variants, isolated previews and appearance code.
 
-**Early experiment.** This is the first working slice, not a proven arbitrary-site extraction engine. No AI API key is required. There is no auth, billing, analytics, marketplace or deployment integration.
+**Early experiment.** Extraction quality on arbitrary sites is unproven. Samples are labelled fixtures; real failures never become sample output. No AI API key, auth or billing is required.
 
-## Run
+## Local development
 
-Requires Node.js 22.13+ (verified here with Node.js 24.19), a supported Chromium environment, DNS access and outbound public web access.
+Use Node.js 24.
 
 ```sh
 npm ci
@@ -14,97 +14,95 @@ npm run browsers
 npm run dev
 ```
 
-Open `http://localhost:3000`. For a production build, use `npm run build` followed by `npm start`. This application needs a persistent Node.js server and writable `.data/jobs`; a static export cannot run extraction. Short-lived serverless functions are not supported by this job implementation.
+Open `http://localhost:3000`. To run a production build: `npm run build && npm start`.
 
-If Playwright cannot download Chromium in your environment, install a trusted Chromium runtime and set `UNPACK_CHROMIUM_EXECUTABLE` to its absolute binary path. The test environment used an unpacked `@sparticuz/chromium` runtime because the Playwright CDN download was unavailable; that test-only package is not bundled with this repository. On Linux, Playwright's system dependencies may also be necessary (`npx playwright install --with-deps chromium`).
+`UNPACK_CHROMIUM_EXECUTABLE` optionally points to an operator-installed Chromium binary. Linux browser dependencies may require `npx playwright install --with-deps chromium`.
 
-## What works
+## Deploy on Vercel
 
-- Responsive landing page and catalogue with self-hosted Inter, automatically fitted component previews, pure-black dark background, and light/dark themes through `next-themes`, Kumo buttons/inputs/dialog, keyboard focus and reduced-motion support.
-- Public URL submission with progress polling, cancellation, explicit failures and 24-hour catalogue retrieval by random job ID.
-- Desktop (1280 px) and mobile (390 px) rendering in fresh browser contexts.
-- Discovery from native controls, exposed roles/labels, class hints, repeated DOM structure and computed-style signatures. Groups are heuristic; style hashes do not prove a shared source component.
-- Up to 12 structural groups and 16 visual styles per page. CSS hover/focus are forced and recorded only if the captured CSS changes. This does not test event-driven behaviour.
-- Sanitised HTML and computed CSS, isolated iframe previews, source crops, supporting pixel-difference measurements, observed accessibility snapshots and per-entry uncertainty.
-- Copy/download a selected style as a standalone React wrapper with plain CSS, or HTML + CSS. React CSS is scoped per component/style. Export the full catalogue as JSON.
+1. Import `sumitttt4/getcomponents` as a Next.js project with the repository root as Root Directory.
+2. Use Node.js **24.x**, `npm ci`, and `npm run build`. Keep Fluid compute enabled; `vercel.json` declares it.
+3. Do not set `UNPACK_CHROMIUM_EXECUTABLE` on Vercel. The app detects `VERCEL=1` and loads the bundled `@sparticuz/chromium` executable. There is no runtime browser download from an external URL.
+4. Deploy, then test a small public page you own. Confirm progress, a real catalogue, code export and cancellation in the deployed environment.
 
-The initial catalogue is explicitly labelled **fixture / sample**, stored only in `src/fixtures/`. An extraction failure never turns into a fixture result. The sample browser controls are illustrative content, not a functional sample application.
+No database or API key is required for this first slice. Extraction runs in **one streamed Node.js request**, capped at 120 seconds at the route level. It does not write jobs into the project directory or assume requests land on the same server. Browser disconnection/cancellation aborts the renderer. Reload recovery uses IndexedDB in the same browser, limited to ten catalogues and a 24-hour lifetime; catalogue URLs are not cross-device sharing links.
 
-## How extraction works
-
-`POST /api/extract` validates a URL and creates a random-ID job. A Next.js `after()` task launches Playwright and routes page/subresource GET requests through a bounded IP-pinned transport. Each redirect is intercepted and validated again. Browser service workers, WebSockets, downloads, popups, credential storage and non-GET requests are disabled or blocked.
-
-The capture core groups candidates by semantic category and DOM shape, then by a computed visual-style signature. Each representative is captured at both widths. Only observed states enter the result. Disabled/loading states are not synthesised.
-
-Each preview is an allowlisted HTML snapshot with resolved CSS values. Scripts, event attributes, navigation URLs, forms, embeds and external assets are removed. The preview iframe has an empty sandbox and a deny-by-default CSP. It receives no source cookies, storage or network permissions.
-
-The React export intentionally uses a sanitised static HTML snapshot inside a small React wrapper. It is appearance code, not reconstructed source JSX or original application logic. It does not remap values to a new token system.
-
-## Verification
+Vercel has a read-only project filesystem, ephemeral function instances, a standard 250 MB function-size limit and a 4.5 MB response limit. The app traces the compressed Chromium runtime into the extraction route, sets a conservative 3.75 MB final-record cap, and omits source screenshots with an explicit warning when necessary. A catalogue still too large is rejected rather than silently truncated. Chromium decompresses only to the runtime's temporary directory.
 
 ```sh
 npm run typecheck
 npm run lint
 npm test
 npm run build
-npm run test:public
+npm run check:vercel
 ```
 
-The deterministic suite covers URL/IP blocking (including numeric loopback and IPv6-mapped targets), inert exports, source-script removal, repeated-component discovery, actual CSS-state changes, mobile capture, pixel comparison and standalone React compilation/server rendering. A complete capture-pipeline test uses a first-party page supplied directly to the same capture core; it does not bypass URL validation on an HTTP route.
+`check:vercel` checks the production trace for all four Chromium binary archives, estimates traced file size, checks Fluid/Node settings and confirms the streaming route configuration. The current local production trace is **80.0 MiB**. This is a local packaging check, **not a successful Vercel deployment**. A live deployment and public-URL smoke test remain required. Test results cover the renderer with a controlled owned page, not all public websites.
 
-On 15 October 2026 the deterministic suite passed **9/9 tests** with the packaged Chromium runtime. Typecheck, lint and production build passed during implementation. No live UI browser QA was available; responsive CSS is implemented, but visual and touch verification on devices remains outstanding.
+Primary platform references: [Vercel runtimes](https://vercel.com/docs/functions/runtimes), [function limits](https://vercel.com/docs/functions/limitations), [Fluid compute configuration](https://vercel.com/docs/project-configuration), [Chromium's Playwright integration](https://github.com/Sparticuz/chromium#usage-with-playwright).
 
-### Required three-site experiment
+## What the product does
 
-The same `extractCatalogue` flow was attempted on all three targets. Raw results are in `BENCHMARK.json`. The command reports failure with a nonzero exit code when any target fails.
+- Geist Sans UI, semibold headings, responsive landing page and working catalogue, light mode and pure-black dark mode. Fonts are self-hosted and the included OFL licence is preserved.
+- Paste a public URL; the page renders at desktop (1280 px) and mobile (390 px) widths. Progress is streamed into the interface.
+- Find native controls, exposed roles and labels, class hints, repeated DOM shapes and computed-style signatures. Group results as buttons, inputs, cards, navigation, badges and other patterns.
+- Capture up to three visual styles per structural group. CSS hover/focus are recorded only when an actual CSS difference is observed. Loading/disabled states are not invented.
+- Browse filtered component cards, compare captures, review uncertainty and observed accessibility information, and inspect supporting pixel-difference measurements.
+- Copy/download a selected style as a React wrapper plus scoped plain CSS, or a standalone HTML document. Export the catalogue as JSON.
 
-| Site class | Target | Result in this environment | Missed components / duplicates / wrong boundaries | Variant coverage | Visual diff | Standalone source export |
-|---|---|---|---|---|---|---|
-| Utility-CSS marketing page | `https://tailwindcss.com/` | Failed before page load | Unknown: source not inspected | Not measured | Not measured | Not generated |
-| CSS-in-JS dashboard | `https://mui.com/material-ui/getting-started/templates/dashboard/` | Failed before page load | Unknown: source not inspected | Not measured | Not measured | Not generated |
-| Design-system docs | `https://kumo-ui.com/components/button/` | Failed before page load | Unknown: source not inspected | Not measured | Not measured | Not generated |
+The React output contains sanitised static markup inside a React wrapper. It is **appearance code**, not reconstructed source JSX, original event handlers or application logic. Values are not remapped to a different token system. Source fonts and external media are not bundled.
 
-DNS lookup for the first target returned `EAI_AGAIN` in this environment. Chromium reported `ERR_BLOCKED_BY_CLIENT` after the safe transport rejected the unresolved requests. The transport's safety requirements were not relaxed. These results do **not** establish that the targets block Unpack, or that extraction quality is good. Rerun on a host with public DNS/egress; manually inventory missed components, duplicates and boundaries before making quality claims. A successful pixel comparison alone is not a functional or accessibility test.
+## How real extraction works
 
-## Limits to know
+`POST /api/extract` validates the URL before starting the browser. The response is newline-delimited JSON: `progress` events, followed by either a real `result` or an explicit `error`. The client never calls a sample endpoint when rendering fails.
 
-- One public page, no authenticated browsing, no crawler, no closed-menu exploration, no iframe/shadow-DOM traversal or canvas reconstruction. A sign-in page may be captured as the public page it exposes.
-- Discovery is bounded to 2,500 queried DOM nodes / 160 visible candidates. Each component is limited to 100 descendants and depth 12. Large components may be skipped or truncated; notes identify capture limits.
-- At most three visual styles per structural group. Similar components can be merged; related components with different structures can be split.
-- External images/fonts, gradients, application state, event handlers and animations are not exported. Pseudo-elements are captured where their computed content can be represented safely. Icons depending on external sprite references may be lost.
-- Computed geometry is captured at two widths; the export uses a 640 px breakpoint. It does not infer the source site's entire responsive design. Mobile DOM changes may make a desktop-discovered component unreachable.
-- A 90-second extraction cap, 160 requests, 4 MB per compressed/decoded response and 24 MB network budget. Screenshot assets larger than 200 KB are omitted. One active extraction and ten starts/hour per process; these are local prototype limits, not distributed quotas.
-- Jobs are held in process memory and stored locally; restarts interrupt running jobs. Results expire after 24 hours; cleanup runs at the next extraction and retains at most 20 result files. Anyone with a random catalogue ID can read its public-page result. Keep this experiment local or behind your own access boundary.
+A fresh browser context routes GET requests through an IP-pinned HTTP transport. DNS answers must all be public; the connection targets the selected checked IP. Redirects are validated again. Private, reserved, metadata and link-local addresses, nonstandard ports and credential-bearing URLs are blocked. An operator-configured proxy must also accept IP-pinned connections; refusal is an explicit failure.
 
-## Isolation and safe operation
+The capture core discovers representative elements, freezes computed visual properties, captures desktop/mobile CSS states, sanitises markup, and compares source crops to isolated renders. The iframe preview has an empty sandbox and deny-by-default CSP. Scripts, event attributes, navigation URLs, external assets and embeds are removed. WebSockets, downloads, service workers and non-GET requests are blocked.
 
-Only standard HTTP/HTTPS ports are accepted. Private, loopback, link-local, metadata, reserved and non-unicast addresses are rejected. All DNS answers must be public; the selected IP is pinned for the actual connection. When `HTTP_PROXY`/`HTTPS_PROXY` is configured by the operator, proxy connections also target that checked IP. A proxy that requires hostname-only routing may refuse these connections; Unpack fails visibly rather than weakening the check.
+## Verification and actual public-site results
 
-Chromium gets an ephemeral context and no credentials. Its OS sandbox is enabled for non-root users; root development containers cannot use that sandbox. **This is not a hardened public rendering service.** Before exposing arbitrary untrusted pages publicly, run Chromium as an unprivileged isolated worker with OS/container resource limits, a working Chromium sandbox, restricted egress and a durable queue. Application-level URL checks do not replace process/network isolation. Do not enter credential-bearing/private URLs.
+On 15 October 2026 the deterministic suite passed **15/15 tests** with a locally installed Chromium runtime. It covers address blocking, source sanitisation, repeated-component discovery, mobile capture, observed hover/focus CSS, pixel comparisons, standalone React compilation/rendering, split stream chunks/UTF-8, cancellation, response caps and route validation. Lint, typecheck and production build also pass. Live UI/device visual QA was unavailable.
 
-Access to a website is not permission to reuse its code, fonts, images or other assets. Use owned pages or get permission. No rights are inferred by extraction.
+The same real extraction flow was attempted on the required three site classes. `npm run test:public` writes `BENCHMARK.json` and returns a nonzero exit code if any attempt fails.
 
-## Source map and file purposes
+| Site class | URL | Result here | Missed components / duplicates / wrong boundaries | Variants / visual diff / standalone source export |
+|---|---|---|---|---|
+| Utility-CSS marketing | `https://tailwindcss.com/` | Failed before load | Unknown | Not measured / not generated |
+| CSS-in-JS dashboard | `https://mui.com/material-ui/getting-started/templates/dashboard/` | Failed before load | Unknown | Not measured / not generated |
+| Design-system docs | `https://kumo-ui.com/components/button/` | Failed before load | Unknown | Not measured / not generated |
 
-| File / directory | Why it exists |
+This environment's direct DNS lookup returned `EAI_AGAIN`; Chromium consequently reported `ERR_BLOCKED_BY_CLIENT` after the safe transport rejected unresolved requests. These results do not prove that the sites block Unpack. Safety checks were not weakened to obtain a result. Rerun from Vercel with working public DNS and egress, then manually assess missed components, duplicates, boundaries and fidelity before making quality claims.
+
+## Known limits
+
+- One public page only. No authentication, crawler, closed-menu exploration, iframe/shadow-DOM traversal or canvas reconstruction. Login walls and automation blocking can prevent useful extraction.
+- Query up to 2,500 DOM nodes and inspect at most 160 visible candidates, 12 structural groups and 16 visual styles. Each captured component is bounded to 100 descendants and depth 12. Large/hidden elements may be skipped; notes report unreachable captures.
+- Structural grouping is heuristic. Similar elements may merge; related source components with different DOM structures may split.
+- CSS is captured at two widths with a 640 px export breakpoint. This does not infer an entire responsive system. Mobile DOM changes may make a desktop-discovered component unreachable.
+- No reconstruction of JavaScript interactions, animation or application state. External fonts, images, gradients and sprite references may be lost. Pixel difference describes a crop at one size, not accessibility or functional correctness.
+- The renderer has a 90-second capture timeout, 160-request budget, 4 MB response/decode cap per resource and 24 MB network budget. Final output size is checked before transmission.
+- One active extraction and ten starts/hour **per warm function instance**. These are prototype safeguards, not distributed quotas. Browser storage can be cleared/disabled; download results you need to retain.
+- This is not a hardened public multi-tenant rendering service. Packaged serverless Chromium runs without the Chromium OS sandbox; use an access boundary for the experiment and a dedicated isolated rendering worker plus distributed quotas before scaling untrusted traffic.
+
+Access to a site is not permission to redistribute its code or assets. Use owned pages or get permission.
+
+## Source map / file purposes
+
+| Path | Purpose |
 |---|---|
-| `src/app/layout.tsx`, `page.tsx`, `icon.svg`, `globals.css` | App shell, landing/catalogue entrypoint, brand mark, responsive neutral themes and purposeful CSS motion |
-| `src/components/providers.tsx` | Shared `next-themes` provider bound to Kumo's `data-mode` convention |
-| `src/components/workspace.tsx` | URL flow, progress, filtering, previews, inspection, copy and downloads |
-| `src/app/api/extract/route.ts` | Same-origin URL submission and asynchronous job startup |
-| `src/app/api/jobs/[id]/route.ts` | Uncached job progress/results and cancellation |
-| `src/lib/network.ts` | URL validation, IP classification, pinned bounded transport and proxy handling |
-| `src/lib/dom.ts` | Fixed DOM-discovery and allowlist-snapshot functions evaluated in the page |
-| `src/lib/extractor.ts` | Isolated browser lifecycle, grouping, state capture, screenshots and pixel comparisons |
-| `src/lib/jobs.ts` | Bounded local job lifecycle, expiry, rate limit and persistence |
-| `src/lib/export.ts`, `types.ts` | Shared snapshot format, sandboxed documents and standalone exports |
-| `public/fonts/inter-latin.woff2`, `public/fonts/OFL.txt` | Self-hosted Inter variable UI font and its OFL licence |
-| `src/fixtures/catalogue.ts` | Clearly separate hand-made sample data |
-| `tests/` | Meaningful security, renderer, state, fidelity and export regression checks |
-| `scripts/benchmark.ts`, `BENCHMARK.json` | Repeatable three-site experiment and its actual recorded failures/results |
-| `.github/workflows/checks.yml` | Reproducible install, lint, typecheck, browser tests and build on pushes/PRs |
-| `next.config.ts`, `tsconfig.json`, `postcss.config.mjs`, `eslint.config.mjs` | Framework configuration, strict typing, Tailwind/Kumo compilation and lint rules |
-| `package.json`, `package-lock.json`, `next-env.d.ts` | Reproducible package inputs and Next.js declarations |
-| `.gitignore`, `.env.example` | Keep runtime/cache files out of source; document optional operator configuration |
+| `src/app/layout.tsx`, `page.tsx`, `icon.svg` | App shell, entrypoint and SVG identity |
+| `src/app/globals.css`, `landing.css` | Shared catalogue controls and the new responsive landing composition |
+| `src/components/workspace.tsx`, `landing-diagram.tsx`, `providers.tsx` | Real URL workflow, catalogue/inspection, illustrative diagram and next-themes provider |
+| `src/app/api/extract/route.ts` | Same-origin streamed extraction, abort handling and instance-local limits |
+| `src/lib/network.ts`, `dom.ts`, `extractor.ts` | Safe transport, fixed DOM inspection and browser capture engine |
+| `src/lib/stream.ts`, `catalogue-storage.ts` | Bounded streaming protocol and browser-only result recovery |
+| `src/lib/export.ts`, `types.ts` | Shared capture data and standalone appearance exports |
+| `src/fixtures/catalogue.ts` | Explicitly separated hand-made sample catalogue |
+| `public/fonts/geist-sans.woff2`, `OFL.txt` | Geist UI font and licence |
+| `tests/`, `scripts/benchmark.ts`, `BENCHMARK.json` | Regression checks and honest three-site experiment |
+| `scripts/check-vercel.mjs`, `vercel.json` | Local release preflight and Vercel build/Fluid settings |
+| `next.config.ts`, TypeScript/PostCSS/ESLint configs, package files | Framework setup, binary tracing, reproducible dependencies and checks |
+| `.github/workflows/checks.yml`, `.gitignore`, `.env.example` | CI checks, ignored runtime files and optional local configuration |
 
-Dependencies are limited to the requested Next/React/Tailwind stack, Kumo and its icon peer, requested `next-themes`, Playwright for rendering, `ipaddr.js` for robust address classification, `pngjs` for actual pixel comparisons, and normal TypeScript/lint/test tooling. Motion uses CSS rather than an extra animation dependency. Kumo is Cloudflare's library; this product is not affiliated with Cloudflare.
+Runtime dependencies are Next/React, Kumo and its icon peer, next-themes, playwright-core, packaged Chromium, ipaddr.js and pngjs. The full Playwright download tooling remains a development dependency. Motion uses CSS. No AI service or API key is used. Kumo is Cloudflare's library; this product is not affiliated with Cloudflare or Vercel.

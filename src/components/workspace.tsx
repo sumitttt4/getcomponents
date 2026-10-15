@@ -9,6 +9,9 @@ import { Input } from '@cloudflare/kumo/components/input';
 import { Dialog } from '@cloudflare/kumo/components/dialog';
 import { ArrowUpRight, ArrowRight, ArrowLeft, Sun, Moon, Globe, SquaresFour, Cursor, Textbox, Rectangle, Browser, Tag, Code, Copy, Check, DownloadSimple, X, MagnifyingGlass, Monitor, DeviceMobile, Info, CircleNotch, WarningCircle, BracketsCurly, Stack, Scan, Fingerprint, CaretRight } from '@phosphor-icons/react';
 import { fixtureCatalogue } from '@/fixtures/catalogue';
+import { readExtractionStream } from '@/lib/stream';
+import { loadCatalogue, saveCatalogue } from '@/lib/catalogue-storage';
+import { LandingDiagram } from './landing-diagram';
 import { exportHtml, exportReact, previewDocument } from '@/lib/export';
 import type { Catalogue, Category, ComponentEntry, Job, Snapshot } from '@/lib/types';
 
@@ -49,36 +52,20 @@ export function Workspace() {
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const extractionRef = useRef<AbortController | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = starting || !!job && ['running','queued'].includes(job.status);
-  const [restoredId, setRestoredId] = useState<string | null>(null);
-  const activeJobId = job && ['running','queued'].includes(job.status) ? job.id : null;
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('catalogue');
     if (id && /^[a-f0-9-]{36}$/.test(id)) {
-      fetch(`/api/jobs/${id}`).then(r => { if (!r.ok) throw new Error('This catalogue has expired or could not be found.'); return r.json(); }).then((j: Job) => { setJob(j); setRestoredId(id); if (j.result) setCatalogue(j.result); }).catch(e => setError(e.message));
+      loadCatalogue(id).then(result => {
+        if (result) setCatalogue(result);
+        else setError('This catalogue is not saved in this browser, or it has expired.');
+      }).catch(() => setError('Browser storage is unavailable. You can still run an extraction and download its result.'));
     }
+    return () => extractionRef.current?.abort();
   }, []);
-  useEffect(() => {
-    if (!activeJobId) return;
-    let stopped = false;
-    const id = activeJobId;
-    async function poll() {
-      try {
-        const response = await fetch(`/api/jobs/${id}`, { cache: 'no-store' });
-        const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Could not read extraction progress.');
-        if (stopped) return;
-        setJob(data);
-        if (data.result) { setCatalogue(data.result); window.history.replaceState(null,'',`?catalogue=${id}#catalogue`); }
-        if (data.status === 'failed') setError(data.error || 'Extraction failed.');
-        if (['queued','running'].includes(data.status)) pollRef.current = setTimeout(poll, 1200);
-      } catch (e) { if (!stopped) { setError(e instanceof Error ? e.message : 'Connection lost.'); setJob(j => j ? { ...j, status: 'failed' } : null); } }
-    }
-    pollRef.current = setTimeout(poll, 350);
-    return () => { stopped = true; if (pollRef.current) clearTimeout(pollRef.current); };
-  }, [activeJobId, restoredId]);
   useEffect(() => {
     if (!busy) return;
     const start = Date.now();
@@ -89,44 +76,72 @@ export function Workspace() {
     event.preventDefault(); if (busy) return;
     const value = url.trim(); if (!value) { inputRef.current?.focus(); return; }
     setError(''); setStarting(true); setElapsed(0);
-    sectionRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+    const controller = new AbortController(); extractionRef.current = controller;
+    setJob({ id:crypto.randomUUID(), status:'running', progress:0, stage:'Preparing extraction', createdAt:new Date().toISOString() });
+    sectionRef.current?.scrollIntoView({ behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth', block:'start' });
     try {
-      const response = await fetch('/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}` }) });
-      const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Could not start extraction.');
-      setJob({ id: data.id, status: 'queued', progress: 0, stage: 'Preparing extraction', createdAt: new Date().toISOString() });
-    } catch (e) { setError(e instanceof Error ? e.message : 'Something went wrong.'); }
-    finally { setStarting(false); }
+      const response = await fetch('/api/extract', { method:'POST', signal:controller.signal, headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:/^[a-z][a-z\d+.-]*:/i.test(value)?value:`https://${value}`}) });
+      if (!response.ok) { const data=await response.json(); throw new Error(data.error||'Could not start extraction.'); }
+      if (!response.body) throw new Error('Your browser did not receive an extraction stream.');
+      let complete = false;
+      for await (const event of readExtractionStream(response.body)) {
+        if (event.type==='progress') setJob(j=>j?{...j,status:'running',stage:event.stage,progress:event.progress}:null);
+        else if (event.type==='error') throw new Error(event.error);
+        else {
+          complete=true;
+          const result=event.catalogue;
+          let saved=false;
+          try { await saveCatalogue(event.id,result); saved=true; }
+          catch { result.warnings.push('This catalogue could not be saved in this browser. Download it before leaving this page.'); }
+          setCatalogue(result); setJob(j=>j?{...j,status:'complete',progress:100,stage:'Catalogue ready'}:null);
+          window.history.replaceState(null,'',saved?`?catalogue=${event.id}#catalogue`:'#catalogue');
+        }
+      }
+      if (!complete) throw new Error('The connection ended before the catalogue was ready. Please retry.');
+    } catch (error) {
+      if (controller.signal.aborted) setJob(j=>j?{...j,status:'cancelled',stage:'Extraction cancelled'}:null);
+      else { setError(error instanceof Error?error.message:'Extraction failed.'); setJob(j=>j?{...j,status:'failed'}:null); }
+    } finally { setStarting(false); extractionRef.current=null; }
   }
   function showSample() { setCatalogue(fixtureCatalogue); setError(''); setJob(null); window.history.replaceState(null,'','#catalogue'); sectionRef.current?.scrollIntoView({ behavior:'smooth' }); }
   return <>
     <a className="skip-link" href="#main">Skip to content</a>
     <header className="site-header"><div className="header-inner">
-      <Link href="/" className="brand" aria-label="Unpack home"><Mark/>Unpack<span className="brand-note">an early experiment</span></Link>
-      <nav className="header-nav" aria-label="Main navigation"><a href="#how-it-works" className="how-link">How it works</a><button onClick={showSample} disabled={busy}>Explore sample <ArrowUpRight size={14}/></button><span className="nav-divider"/><Button variant="ghost" shape="square" className="theme-button" aria-label="Switch between light and dark theme" onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}><Sun className="light-icon" size={18}/><Moon className="dark-icon" size={18}/></Button></nav>
+      <Link href="/" className="brand" aria-label="Unpack home"><Mark/>Unpack<span className="brand-note">URL → UI</span></Link>
+      <nav className="header-nav" aria-label="Main navigation"><a href="#how-it-works" className="how-link">How it works</a><a href="https://github.com/sumitttt4/getcomponents" target="_blank" rel="noopener noreferrer" className="source-nav">Source <ArrowUpRight size={13}/></a><button onClick={showSample} disabled={busy}>Explore sample <ArrowUpRight size={14}/></button><span className="nav-divider"/><Button variant="ghost" shape="square" className="theme-button" aria-label="Switch between light and dark theme" onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}><Sun className="light-icon" size={18}/><Moon className="dark-icon" size={18}/></Button></nav>
     </div></header>
     <main id="main">
-      <section className="hero">
-        <div className="eyebrow"><span className="status-dot"/>From one URL to the parts behind it <ArrowRight size={13}/></div>
-        <h1>A website, in its<br/><span>smallest parts.</span></h1>
-        <p className="hero-description">Paste a URL. Explore its buttons, inputs, cards and more.<br className="desktop-break"/> A component catalogue, with previews and code.</p>
+      <section className="hero landing-hero">
+        <div className="hero-copy">
+          <div className="eyebrow"><span className="status-dot"/>A closer look at the interfaces you love</div>
+          <h1>From website.<br/>To building blocks<span className="hero-period">.</span></h1>
+          <p className="hero-description">The button. The card. That perfectly spaced input. Paste a URL and explore the UI behind the page — organised, inspectable, and ready to learn from.</p>
+          <div className="hero-capabilities"><span><Check size={14}/>Component types</span><span><Check size={14}/>Observed variants</span><span><Check size={14}/>Previews + code</span></div>
+        </div>
+        <LandingDiagram/>
+        <div className="hero-entry"><div className="entry-heading"><span>Start with a website.</span><span>One public URL. One component catalogue.</span></div>
         <form className="url-form" onSubmit={start}>
-          <div className="url-input-wrap"><Globe size={20} aria-hidden="true"/><label className="sr-only" htmlFor="website-url">Public website URL</label><input id="website-url" ref={inputRef} value={url} onChange={e => setUrl(e.target.value)} inputMode="url" autoComplete="url" placeholder="https://your-inspiration.com" spellCheck={false} maxLength={2048} disabled={busy} aria-describedby="url-help"/></div>
+          <div className="url-input-wrap"><Globe size={20} aria-hidden="true"/><label className="sr-only" htmlFor="website-url">Public website URL</label><input id="website-url" ref={inputRef} value={url} onChange={e => setUrl(e.target.value)} inputMode="url" autoComplete="url" placeholder="https://a-website-you-love.com" spellCheck={false} maxLength={2048} disabled={busy} aria-describedby="url-help"/></div>
           <Button type="submit" variant="primary" className="primary extract-button" disabled={busy}>{busy ? <><CircleNotch className="spin" size={17}/>Unpacking</> : <>Extract components <ArrowRight size={16}/></>}</Button>
         </form>
-        <p className="form-hint" id="url-help">Public pages only. No sign-in required. <button onClick={showSample} disabled={busy}>Or explore a sample <ArrowUpRight size={12}/></button></p>
-        <div className="hero-annotation"><span className="annotation-line"/><span>Keep the details. Understand the system.</span><span className="annotation-line"/></div>
+        <p className="form-hint" id="url-help">Public pages. No API key. <button onClick={showSample} disabled={busy}>See a sample first <ArrowUpRight size={12}/></button></p>
+        </div>
       </section>
+      <div className="landing-divider"><span>Less screenshot collecting. More understanding.</span><span>Built for the details <SquaresFour size={14}/></span></div>
+      <div className="collection-intro"><div><span className="kicker">The output, up close</span><h2>A page is the beginning.<br/><span>The parts are the interesting bit.</span></h2></div><p>Explore a hand-made sample below.<br/>Paste a URL above for a real extraction.</p></div>
       <section className="catalogue-section" id="catalogue" ref={sectionRef} aria-label="Component catalogue">
         {error && <div className="error-notice" role="alert"><WarningCircle size={20}/><div><strong>We couldn’t complete that extraction.</strong><p>{error}</p><p>Your previous catalogue is still below. No sample has been substituted for the failed result.</p></div><button aria-label="Dismiss error" onClick={() => setError('')}><X size={16}/></button></div>}
-        {busy ? <div className="progress-window"><div className="window-bar"><span className="window-dots"><i/><i/><i/></span><span>unpacking your page</span><span>{elapsed}s elapsed</span></div><div className="progress-body"><div className="scan-mark"><Scan size={40}/></div><span className="kicker">A closer look</span><h2>{job?.stage || 'Preparing extraction'}</h2><p>Rendering the page, finding its patterns, and isolating each component.</p><div className="progress-track" role="progressbar" aria-label="Extraction progress" aria-valuenow={job?.progress || 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${Math.max(3,job?.progress || 0)}%` }}/></div><div className="progress-steps"><span data-done={(job?.progress || 0)>20}><Check/>Render</span><span data-done={(job?.progress || 0)>26}><Check/>Discover</span><span data-done={(job?.progress || 0)>90}><Check/>Capture</span><span data-done={(job?.progress || 0)>96}><Check/>Organise</span></div><p className="progress-live" role="status">{job?.stage || 'Starting your extraction…'}</p>{job && <Button variant="ghost" onClick={async () => { try { const r = await fetch(`/api/jobs/${job.id}`, { method:'DELETE' }); if (!r.ok) throw new Error('Could not cancel extraction.'); setJob(j => j ? { ...j,status:'cancelled' } : null); } catch (e) { setError((e as Error).message); } }}>Cancel extraction</Button>}</div></div> : <CatalogueView key={catalogue.createdAt} catalogue={catalogue} onReset={() => { inputRef.current?.focus(); window.scrollTo({ top:0,behavior:'smooth' }); }}/>} 
+        {busy ? <div className="progress-window"><div className="window-bar"><span className="window-dots"><i/><i/><i/></span><span>unpacking your page</span><span>{elapsed}s elapsed</span></div><div className="progress-body"><div className="scan-mark"><Scan size={40}/></div><span className="kicker">A closer look</span><h2>{job?.stage || 'Preparing extraction'}</h2><p>Rendering the page, finding its patterns, and isolating each component.</p><div className="progress-track" role="progressbar" aria-label="Extraction progress" aria-valuenow={job?.progress || 0} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${Math.max(3,job?.progress || 0)}%` }}/></div><div className="progress-steps"><span data-done={(job?.progress || 0)>20}><Check/>Render</span><span data-done={(job?.progress || 0)>26}><Check/>Discover</span><span data-done={(job?.progress || 0)>90}><Check/>Capture</span><span data-done={(job?.progress || 0)>96}><Check/>Organise</span></div><p className="progress-live" role="status">{job?.stage || 'Starting your extraction…'}</p>{job && <Button variant="ghost" onClick={() => extractionRef.current?.abort()}>Cancel extraction</Button>}</div></div> : <CatalogueView key={catalogue.createdAt} catalogue={catalogue} onReset={() => { inputRef.current?.focus(); window.scrollTo({ top:0,behavior:'smooth' }); }}/>} 
         <p className="catalogue-caption"><Info size={14}/>{catalogue.kind === 'fixture' ? 'Fixture / sample. Every component above is hand-made to demonstrate the catalogue.' : 'Real extraction output. Heuristic grouping and visual captures; review before reuse.'}</p>
       </section>
-      <section className="how-section" id="how-it-works"><div className="section-intro"><span className="kicker">Behind the catalogue</span><h2>One page in.<br/>The pieces, laid out.</h2><p>No manual picking. No new visual identity.<br/>Just a closer look at what is already there.</p></div><div className="process-grid">{[
-        { n:'01', icon:Globe, title:'Render the page', text:'Open a public URL at desktop and mobile widths in a fresh browser.' },
-        { n:'02', icon:Scan, title:'Find the patterns', text:'Look for semantic controls, repeated structures and computed visual styles.' },
-        { n:'03', icon:Stack, title:'Capture what exists', text:'Separate visual variants. Record hover and focus only when a change is observed.' },
-        { n:'04', icon:Code, title:'Inspect and take away', text:'Explore isolated previews and export appearance captures as React or HTML + CSS.' },
+      <section className="value-section" aria-label="What you get"><div className="value-code"><div className="value-code-top"><Code size={16}/><span>Button / appearance capture</span><span>Sample</span></div><pre><code><span className="code-muted">{'// Keep the details that make it work visually.\n'}</span>{'.button {\n'}<span>{'  background: #171717;\n  border-radius: 8px;\n  padding: 12px 16px;\n  font-weight: 600;\n'}</span>{'}'}</code></pre><div className="value-code-bottom"><span>Plain CSS. Original values.</span><Check size={14}/></div></div><div className="value-copy"><span className="kicker">Keep what makes it, it.</span><h2>The little details.<br/>Without the guesswork.</h2><p>Inspect the visual decisions behind a component. Its spacing, shape, colour and captured states — preserved as source values, instead of forced into a different design system.</p><div className="value-points"><div><Fingerprint size={18}/><span><b>Faithful values</b><small>Computed styles, with no brand remapping.</small></span></div><div><Monitor size={18}/><span><b>Two perspectives</b><small>Desktop and mobile captures, side by side.</small></span></div><div><Code size={18}/><span><b>Something to take away</b><small>Download appearance code as React or HTML + CSS.</small></span></div></div></div></section>
+      <section className="how-section" id="how-it-works"><div className="section-intro"><span className="kicker">A simple sequence</span><h2>One link.<br/>A different way to look.</h2><p>From a rendered page to its reusable patterns.</p></div><div className="process-grid">{[
+        { n:'01', icon:Globe, title:'Paste a public URL', text:'Start with your own website, or a page you have permission to inspect.' },
+        { n:'02', icon:Scan, title:'Let the page render', text:'A fresh browser examines desktop and mobile layouts and finds component candidates.' },
+        { n:'03', icon:Stack, title:'Explore the collection', text:'Browse buttons, inputs, cards, navigation and other observed patterns.' },
+        { n:'04', icon:Code, title:'Inspect the details', text:'Compare captured styles, review the evidence and download standalone appearance code.' },
       ].map(item => <article className="process-step" key={item.n}><div><item.icon size={21}/><span>{item.n}</span></div><h3>{item.title}</h3><p>{item.text}</p></article>)}</div></section>
+      <section className="closing-cta"><div><span className="kicker">Good interfaces are worth understanding.</span><h2>Find the parts<br/>that caught your eye.</h2></div><Button variant="primary" className="primary" onClick={()=>{inputRef.current?.focus();window.scrollTo({top:0,behavior:'smooth'});}}>Unpack a website <ArrowUpRight size={17}/></Button></section>
       <section className="experiment-note"><Fingerprint size={26}/><div><h2>Useful curiosity. Honest limitations.</h2><p>Unpack is an early experiment. Complex layouts, custom fonts, hidden states and application logic may not survive extraction. Every catalogue surfaces its gaps. A close pixel match is evidence about appearance — never proof of working behaviour.</p><p>Access to a page is not permission to redistribute its code or assets. Use your own sites, or get permission.</p></div><span className="experiment-label">Work in progress</span></section>
     </main>
     <footer><Link href="/" className="brand"><Mark/>Unpack</Link><span>A closer look at the things we build.</span><a href="#main">Back to top ↑</a></footer>
